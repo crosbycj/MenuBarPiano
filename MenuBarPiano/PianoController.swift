@@ -191,7 +191,7 @@ final class PianoController: ObservableObject {
             return
         }
 
-        let timer = Timer(timeInterval: 5, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: 2.5, repeats: false) { [weak self] _ in
             self?.currentNoteIndex = 0
             self?.idleResetTimer = nil
         }
