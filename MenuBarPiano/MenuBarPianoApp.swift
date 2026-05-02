@@ -118,15 +118,30 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        for song in controller.songs {
-            let item = NSMenuItem(title: song.name, action: #selector(selectSong(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = song.name
-            item.state = song == controller.selectedSong ? .on : .off
-            menu.addItem(item)
+        for group in groupedSongsByCategory() {
+            let categoryItem = NSMenuItem(title: group.category, action: nil, keyEquivalent: "")
+            let submenu = NSMenu(title: group.category)
+
+            for song in group.songs {
+                let item = NSMenuItem(title: song.name, action: #selector(selectSong(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = song.id
+                item.state = song == controller.selectedSong ? .on : .off
+                submenu.addItem(item)
+            }
+
+            menu.addItem(categoryItem)
+            menu.setSubmenu(submenu, for: categoryItem)
         }
 
         menu.addItem(.separator())
+
+        if controller.selectedSong.script != nil {
+            let copyScript = NSMenuItem(title: "Copy typing script", action: #selector(copyTypingScript), keyEquivalent: "")
+            copyScript.target = self
+            menu.addItem(copyScript)
+            menu.addItem(.separator())
+        }
 
         let loop = NSMenuItem(title: "Loop", action: #selector(toggleLoop), keyEquivalent: "")
         loop.target = self
@@ -145,16 +160,42 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(quit)
     }
 
+    private func groupedSongsByCategory() -> [(category: String, songs: [Song])] {
+        var groups: [(category: String, songs: [Song])] = []
+        var categoryIndexes: [String: Int] = [:]
+
+        for song in controller.songs {
+            if let index = categoryIndexes[song.category] {
+                groups[index].songs.append(song)
+            } else {
+                categoryIndexes[song.category] = groups.count
+                groups.append((category: song.category, songs: [song]))
+            }
+        }
+
+        return groups
+    }
+
     @objc private func selectSong(_ sender: NSMenuItem) {
         guard
-            let songName = sender.representedObject as? String,
-            let song = controller.songs.first(where: { $0.name == songName })
+            let songID = sender.representedObject as? String,
+            let song = controller.songs.first(where: { $0.id == songID })
         else {
             return
         }
 
         controller.select(song)
         rebuildMenu()
+    }
+
+    @objc private func copyTypingScript() {
+        guard let script = controller.selectedSong.script else {
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(script, forType: .string)
     }
 
     @objc private func togglePlayback() {

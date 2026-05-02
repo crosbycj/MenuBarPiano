@@ -45,8 +45,8 @@ After changing permissions in System Settings, quit and rerun the app.
 
 ## Songs
 
-The built-in melodies are:
+The built-in songs are grouped in the menu:
 
-- Twinkle Twinkle Little Star
-- Ode to Joy
-- Mary Had a Little Lamb
+- Melodies: Twinkle Twinkle Little Star, Ode to Joy, Mary Had a Little Lamb, Für Elise, Amazing Grace
+- Dramatic: Jaws Theme, Imperial March, Pink Panther Theme, Psycho Shower Scene, Beethoven's 5th Opening
+- Games: Tetris Theme, Super Mario Bros. Overworld Theme
