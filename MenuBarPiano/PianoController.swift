@@ -11,6 +11,8 @@ final class PianoController: ObservableObject {
     @Published private(set) var hasAccessibilityPermission = AccessibilityPermission.isGranted
     @Published private(set) var hasInputMonitoringPermission = InputMonitoringPermission.isGranted
     @Published private(set) var lastError: String?
+    @Published private(set) var loopEnabled = true
+    @Published private(set) var resetAfterPauseEnabled = true
     @Published var selectedSong: Song = Song.library[0] {
         didSet {
             currentNoteIndex = 0
@@ -20,16 +22,18 @@ final class PianoController: ObservableObject {
     private let audioEngine = PianoAudioEngine()
     private let keyTap = GlobalKeyTap()
     private var currentNoteIndex = 0
+    private var idleResetTimer: Timer?
 
     init() {
         keyTap.onKeyDown = { [weak self] in
             DispatchQueue.main.async {
-                self?.playNextNote()
+                self?.handleKeyDown()
             }
         }
     }
 
     deinit {
+        cancelIdleResetTimer()
         keyTap.stop()
         audioEngine.stop()
     }
@@ -40,6 +44,22 @@ final class PianoController: ObservableObject {
 
     func setEnabled(_ enabled: Bool) {
         enabled ? enable() : disable()
+    }
+
+    func toggleLoop() {
+        loopEnabled.toggle()
+
+        if loopEnabled, currentNoteIndex >= selectedSong.notes.count {
+            currentNoteIndex = 0
+        }
+    }
+
+    func toggleResetAfterPause() {
+        resetAfterPauseEnabled.toggle()
+
+        if !resetAfterPauseEnabled {
+            cancelIdleResetTimer()
+        }
     }
 
     var canListenForKeystrokes: Bool {
@@ -126,17 +146,63 @@ final class PianoController: ObservableObject {
     private func disable() {
         keyTap.stop()
         audioEngine.stop()
+        cancelIdleResetTimer()
         isEnabled = false
     }
 
-    private func playNextNote() {
-        guard isEnabled, !selectedSong.notes.isEmpty else {
+    private func handleKeyDown() {
+        guard isEnabled else {
             return
         }
 
-        let note = selectedSong.notes[currentNoteIndex % selectedSong.notes.count]
-        currentNoteIndex = (currentNoteIndex + 1) % selectedSong.notes.count
+        playNextNote()
+        restartIdleResetTimer()
+    }
+
+    private func playNextNote() {
+        let notes = selectedSong.notes
+
+        guard !notes.isEmpty else {
+            return
+        }
+
+        if currentNoteIndex >= notes.count {
+            guard loopEnabled else {
+                return
+            }
+
+            currentNoteIndex = 0
+        }
+
+        let note = notes[currentNoteIndex]
+        currentNoteIndex += 1
+
+        if loopEnabled, currentNoteIndex >= notes.count {
+            currentNoteIndex = 0
+        }
+
         audioEngine.play(midiNote: note)
+    }
+
+    private func restartIdleResetTimer() {
+        cancelIdleResetTimer()
+
+        guard resetAfterPauseEnabled else {
+            return
+        }
+
+        let timer = Timer(timeInterval: 5, repeats: false) { [weak self] _ in
+            self?.currentNoteIndex = 0
+            self?.idleResetTimer = nil
+        }
+
+        idleResetTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func cancelIdleResetTimer() {
+        idleResetTimer?.invalidate()
+        idleResetTimer = nil
     }
 }
 

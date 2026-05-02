@@ -1,5 +1,5 @@
 import AppKit
-import SwiftUI
+import Carbon
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let controller = PianoController()
     private var statusItemController: StatusItemController?
-    private var controlPanel: NSPanel?
+    private var toggleHotKey: GlobalHotKey?
 
     static func main() {
         let app = NSApplication.shared
@@ -17,14 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
         delegate.installStatusItem()
-        delegate.showControlPanel()
-        FileHandle.standardError.write(Data("MenuBarPiano ready. Control panel is open; menu bar item is named 'Piano'.\n".utf8))
+        delegate.installToggleHotKey()
+        FileHandle.standardError.write(Data("MenuBarPiano ready. Menu bar item is ♫.\n".utf8))
         app.run()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
-        showControlPanel()
+        installToggleHotKey()
     }
 
     private func installStatusItem() {
@@ -33,37 +33,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let statusItemController = StatusItemController(controller: controller)
-        statusItemController.onShowControls = { [weak self] in
-            self?.showControlPanel()
-        }
         self.statusItemController = statusItemController
         statusItemController.install()
     }
 
-    private func showControlPanel() {
-        if let controlPanel {
-            controlPanel.makeKeyAndOrderFront(nil)
-            NSApplication.shared.activate(ignoringOtherApps: true)
+    private func installToggleHotKey() {
+        guard toggleHotKey == nil else {
             return
         }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 420),
-            styleMask: [.titled, .closable, .utilityWindow],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "MenuBar Piano"
-        panel.isReleasedWhenClosed = false
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.contentView = NSHostingView(rootView: PianoControlPanel(controller: controller))
-        panel.center()
+        let hotKey = GlobalHotKey(
+            keyCode: UInt32(kVK_ANSI_M),
+            modifiers: UInt32(optionKey | shiftKey)
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                self?.togglePlayback()
+            }
+        }
 
-        controlPanel = panel
-        panel.makeKeyAndOrderFront(nil)
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        if hotKey.register() {
+            toggleHotKey = hotKey
+        } else {
+            FileHandle.standardError.write(Data("MenuBarPiano could not register hotkey Option+Shift+M.\n".utf8))
+        }
+    }
+
+    private func togglePlayback() {
+        controller.setEnabled(!controller.isEnabled)
+        statusItemController?.refreshMenu()
     }
 }
 
@@ -71,7 +68,6 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     private let controller: PianoController
     private var statusItem: NSStatusItem?
     private var menu: NSMenu?
-    var onShowControls: (() -> Void)?
 
     init(controller: PianoController) {
         self.controller = controller
@@ -92,14 +88,14 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         self.statusItem = statusItem
 
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "MenuBar Piano")
-            image?.isTemplate = true
-            button.image = image
-            button.imagePosition = .imageLeading
-            button.title = "Piano"
+            button.title = "♫"
             button.toolTip = "MenuBar Piano"
         }
 
+        rebuildMenu()
+    }
+
+    func refreshMenu() {
         rebuildMenu()
     }
 
@@ -115,14 +111,12 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.removeAllItems()
 
-        let controls = NSMenuItem(title: "Show Controls", action: #selector(showControls), keyEquivalent: "")
-        controls.target = self
-        menu.addItem(controls)
-        menu.addItem(.separator())
+        let playbackTitle = controller.isEnabled ? "⏸ Stop" : "▶ Start"
+        let playback = NSMenuItem(title: playbackTitle, action: #selector(togglePlayback), keyEquivalent: "")
+        playback.target = self
+        menu.addItem(playback)
 
-        let header = NSMenuItem(title: "Song", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
+        menu.addItem(.separator())
 
         for song in controller.songs {
             let item = NSMenuItem(title: song.name, action: #selector(selectSong(_:)), keyEquivalent: "")
@@ -134,42 +128,15 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let testNote = NSMenuItem(title: "Play Test Note", action: #selector(playTestNote), keyEquivalent: "")
-        testNote.target = self
-        menu.addItem(testNote)
+        let loop = NSMenuItem(title: "Loop", action: #selector(toggleLoop), keyEquivalent: "")
+        loop.target = self
+        loop.state = controller.loopEnabled ? .on : .off
+        menu.addItem(loop)
 
-        if !controller.hasAccessibilityPermission {
-            let access = NSMenuItem(title: "Accessibility access required", action: nil, keyEquivalent: "")
-            access.isEnabled = false
-            menu.addItem(access)
-
-            let grant = NSMenuItem(title: "Grant Access...", action: #selector(grantAccess), keyEquivalent: "")
-            grant.target = self
-            menu.addItem(grant)
-        }
-
-        if !controller.hasInputMonitoringPermission {
-            let access = NSMenuItem(title: "Input Monitoring access required", action: nil, keyEquivalent: "")
-            access.isEnabled = false
-            menu.addItem(access)
-
-            let grant = NSMenuItem(title: "Grant Input Monitoring...", action: #selector(grantInputMonitoring), keyEquivalent: "")
-            grant.target = self
-            menu.addItem(grant)
-        }
-
-        let toggleTitle = controller.isEnabled ? "Turn Off" : "Turn On"
-        let toggle = NSMenuItem(title: toggleTitle, action: #selector(togglePlayback), keyEquivalent: "")
-        toggle.target = self
-        toggle.isEnabled = controller.canListenForKeystrokes
-        toggle.state = controller.isEnabled ? .on : .off
-        menu.addItem(toggle)
-
-        if let lastError = controller.lastError {
-            let error = NSMenuItem(title: lastError, action: nil, keyEquivalent: "")
-            error.isEnabled = false
-            menu.addItem(error)
-        }
+        let resetAfterPause = NSMenuItem(title: "Reset after pause", action: #selector(toggleResetAfterPause), keyEquivalent: "")
+        resetAfterPause.target = self
+        resetAfterPause.state = controller.resetAfterPauseEnabled ? .on : .off
+        menu.addItem(resetAfterPause)
 
         menu.addItem(.separator())
 
@@ -190,26 +157,18 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         rebuildMenu()
     }
 
-    @objc private func grantAccess() {
-        controller.requestAccessibilityPermission()
-        rebuildMenu()
-    }
-
-    @objc private func grantInputMonitoring() {
-        controller.requestInputMonitoringPermission()
-        rebuildMenu()
-    }
-
-    @objc private func playTestNote() {
-        controller.playPreviewNote()
-    }
-
-    @objc private func showControls() {
-        onShowControls?()
-    }
-
     @objc private func togglePlayback() {
         controller.setEnabled(!controller.isEnabled)
+        rebuildMenu()
+    }
+
+    @objc private func toggleLoop() {
+        controller.toggleLoop()
+        rebuildMenu()
+    }
+
+    @objc private func toggleResetAfterPause() {
+        controller.toggleResetAfterPause()
         rebuildMenu()
     }
 
@@ -218,113 +177,92 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     }
 }
 
-private struct PianoControlPanel: View {
-    @ObservedObject var controller: PianoController
+private final class GlobalHotKey {
+    private let keyCode: UInt32
+    private let modifiers: UInt32
+    private let handler: () -> Void
+    private let hotKeyID = EventHotKeyID(signature: 0x4D42504D, id: 1)
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandlerRef: EventHandlerRef?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: "music.note")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("MenuBar Piano")
-                        .font(.title3.weight(.semibold))
-                    Text("The menu bar item is still installed as Piano.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Picker(
-                "Song",
-                selection: Binding(
-                    get: { controller.selectedSong },
-                    set: { controller.select($0) }
-                )
-            ) {
-                ForEach(controller.songs) { song in
-                    Text(song.name).tag(song)
-                }
-            }
-
-            HStack(spacing: 10) {
-                Button("Play Test Note") {
-                    controller.playPreviewNote()
-                }
-
-                Button("Refresh Access") {
-                    controller.refreshPermissions()
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                permissionRow(
-                    title: "Accessibility",
-                    isGranted: controller.hasAccessibilityPermission
-                )
-                permissionRow(
-                    title: "Input Monitoring",
-                    isGranted: controller.hasInputMonitoringPermission
-                )
-            }
-
-            if !controller.hasAccessibilityPermission || !controller.hasInputMonitoringPermission {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button("Grant Accessibility Access") {
-                        controller.requestAccessibilityPermission()
-                    }
-                    .disabled(controller.hasAccessibilityPermission)
-
-                    Button("Grant Input Monitoring Access") {
-                        controller.requestInputMonitoringPermission()
-                    }
-                    .disabled(controller.hasInputMonitoringPermission)
-
-                    Text("After changing either switch in System Settings, click Refresh Access. If it still shows missing, quit and run make run again.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Toggle(
-                "Play keystrokes",
-                isOn: Binding(
-                    get: { controller.isEnabled },
-                    set: { controller.setEnabled($0) }
-                )
-            )
-            .disabled(!controller.canListenForKeystrokes)
-
-            if let lastError = controller.lastError {
-                Text(lastError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-            }
-        }
-        .padding(20)
-        .frame(width: 390)
+    init(keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.handler = handler
     }
 
-    private func permissionRow(title: String, isGranted: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(isGranted ? Color.green : Color.red)
-            Text("\(title): \(isGranted ? "Granted" : "Missing")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+    deinit {
+        unregister()
     }
+
+    func register() -> Bool {
+        unregister()
+
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let userData = Unmanaged.passUnretained(self).toOpaque()
+
+        let eventHandlerStatus = InstallEventHandler(
+            GetApplicationEventTarget(),
+            globalHotKeyEventHandler,
+            1,
+            &eventType,
+            userData,
+            &eventHandlerRef
+        )
+
+        guard eventHandlerStatus == noErr else {
+            eventHandlerRef = nil
+            return false
+        }
+
+        let hotKeyStatus = RegisterEventHotKey(
+            keyCode,
+            modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        guard hotKeyStatus == noErr else {
+            unregister()
+            return false
+        }
+
+        return true
+    }
+
+    func unregister() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+        }
+
+        hotKeyRef = nil
+        eventHandlerRef = nil
+    }
+
+    fileprivate func handle() {
+        handler()
+    }
+}
+
+private func globalHotKeyEventHandler(
+    nextHandler: EventHandlerCallRef?,
+    event: EventRef?,
+    userData: UnsafeMutableRawPointer?
+) -> OSStatus {
+    guard let userData else {
+        return noErr
+    }
+
+    let hotKey = Unmanaged<GlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
+    hotKey.handle()
+    return noErr
 }

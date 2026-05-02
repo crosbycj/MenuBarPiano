@@ -35,7 +35,7 @@ run: install
 	fi
 	@sleep 1; \
 	if pgrep -qx MenuBarPiano; then \
-		echo "MenuBarPiano is running from $(INSTALLED_APP). The control panel should be visible."; \
+		echo "MenuBarPiano is running from $(INSTALLED_APP). The ♫ menu bar item should be visible."; \
 	else \
 		echo "Run 'make debug' to keep launch output attached."; \
 		exit 1; \
