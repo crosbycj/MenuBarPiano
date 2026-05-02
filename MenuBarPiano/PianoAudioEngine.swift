@@ -57,13 +57,15 @@ final class PianoAudioEngine {
 
     private func configureEngine() {
         let outputFormat = engine.outputNode.inputFormat(forBus: 0)
-        let channelCount = max(outputFormat.channelCount, 2)
+        let channelCount = min(max(outputFormat.channelCount, 1), 2)
         sampleRate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : 44_100
 
-        let renderFormat = AVAudioFormat(
+        guard let renderFormat = AVAudioFormat(
             standardFormatWithSampleRate: sampleRate,
             channels: channelCount
-        )!
+        ) else {
+            preconditionFailure("Could not create audio render format")
+        }
 
         sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList in
             guard let self else { return noErr }

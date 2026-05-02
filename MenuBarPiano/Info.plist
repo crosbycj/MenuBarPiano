@@ -30,6 +30,8 @@
 	<string>MenuBar Piano may open the Privacy &amp; Security settings pane to help you grant Accessibility access.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSInputMonitoringUsageDescription</key>
+	<string>MenuBar Piano uses Input Monitoring access to observe real system-wide key presses and play the next note without changing what you type.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

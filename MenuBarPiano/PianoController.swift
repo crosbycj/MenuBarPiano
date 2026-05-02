@@ -2,12 +2,14 @@ import AppKit
 import ApplicationServices
 import Combine
 import Foundation
+import IOKit.hidsystem
 
 final class PianoController: ObservableObject {
     let songs = Song.library
 
     @Published private(set) var isEnabled = false
     @Published private(set) var hasAccessibilityPermission = AccessibilityPermission.isGranted
+    @Published private(set) var hasInputMonitoringPermission = InputMonitoringPermission.isGranted
     @Published private(set) var lastError: String?
     @Published var selectedSong: Song = Song.library[0] {
         didSet {
@@ -40,10 +42,27 @@ final class PianoController: ObservableObject {
         enabled ? enable() : disable()
     }
 
-    func refreshAccessibilityPermission() {
-        hasAccessibilityPermission = AccessibilityPermission.isGranted
+    var canListenForKeystrokes: Bool {
+        hasAccessibilityPermission && hasInputMonitoringPermission
+    }
 
-        if !hasAccessibilityPermission, isEnabled {
+    func playPreviewNote() {
+        guard let note = selectedSong.notes.first else {
+            return
+        }
+
+        audioEngine.play(midiNote: note)
+    }
+
+    func refreshAccessibilityPermission() {
+        refreshPermissions()
+    }
+
+    func refreshPermissions() {
+        hasAccessibilityPermission = AccessibilityPermission.isGranted
+        hasInputMonitoringPermission = InputMonitoringPermission.isGranted
+
+        if !canListenForKeystrokes, isEnabled {
             disable()
         }
     }
@@ -57,11 +76,28 @@ final class PianoController: ObservableObject {
         }
     }
 
+    func requestInputMonitoringPermission() {
+        hasInputMonitoringPermission = InputMonitoringPermission.request()
+        InputMonitoringPermission.openSettings()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.refreshPermissions()
+        }
+    }
+
     private func enable() {
-        refreshAccessibilityPermission()
+        refreshPermissions()
 
         guard hasAccessibilityPermission else {
             lastError = "Accessibility access is required before listening to keystrokes."
+            isEnabled = false
+            keyTap.stop()
+            audioEngine.stop()
+            return
+        }
+
+        guard hasInputMonitoringPermission else {
+            lastError = "Input Monitoring access is required before listening to keystrokes."
             isEnabled = false
             keyTap.stop()
             audioEngine.stop()
@@ -121,6 +157,27 @@ enum AccessibilityPermission {
     static func openSettings() {
         guard let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ) else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
+}
+
+enum InputMonitoringPermission {
+    static var isGranted: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    }
+
+    @discardableResult
+    static func request() -> Bool {
+        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+    }
+
+    static func openSettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
         ) else {
             return
         }
