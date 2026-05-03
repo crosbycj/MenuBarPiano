@@ -16,6 +16,10 @@ final class GlobalKeyTap {
         59, 62, // control, right control
         63 // function
     ]
+    private let enterKeyCodes: Set<Int64> = [
+        36, // return
+        76 // keypad enter
+    ]
 
     var isRunning: Bool {
         eventTap != nil
@@ -84,7 +88,11 @@ final class GlobalKeyTap {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
-        guard !modifierKeyCodes.contains(keyCode), !isAutorepeat else {
+        guard
+            !modifierKeyCodes.contains(keyCode),
+            !enterKeyCodes.contains(keyCode),
+            !isAutorepeat
+        else {
             return
         }
 
