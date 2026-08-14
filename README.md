@@ -34,6 +34,28 @@ To reveal the installed app in Finder:
 make reveal
 ```
 
+## Release
+
+Install a Developer ID Application certificate, then save App Store Connect
+credentials to the keychain once (the values are entered locally and are not
+stored in this repository):
+
+```sh
+xcrun notarytool store-credentials "MenuBarPiano-notary"
+```
+
+Build, sign with the hardened runtime, notarize, staple, and zip the app with:
+
+```sh
+make release
+```
+
+The signing identity and keychain profile can be overridden with the Makefile
+variables `SIGNING_IDENTITY` and `NOTARY_PROFILE`. The release version and build
+number default to `RELEASE_VERSION=1.0` and `BUILD_NUMBER=1`. The finished zip is
+written to `dist/`. No entitlements are embedded in the release signature; Input
+Monitoring remains a user-granted Privacy & Security permission.
+
 ## Permissions
 
 MenuBar Piano needs Input Monitoring enabled for `~/Applications/MenuBarPiano.app`.
