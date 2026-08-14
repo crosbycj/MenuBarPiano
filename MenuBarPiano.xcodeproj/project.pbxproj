@@ -12,6 +12,8 @@
 		B10000000000000000000003 /* GlobalKeyTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* GlobalKeyTap.swift */; };
 		B10000000000000000000004 /* PianoAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* PianoAudioEngine.swift */; };
 		B10000000000000000000005 /* Song.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* Song.swift */; };
+		B10000000000000000000008 /* FreePlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* FreePlay.swift */; };
+		B10000000000000000000009 /* UserSongLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* UserSongLibrary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +25,8 @@
 		A10000000000000000000005 /* Song.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Song.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000007 /* MenuBarPiano.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MenuBarPiano.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000008 /* FreePlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlay.swift; sourceTree = "<group>"; };
+		A10000000000000000000009 /* UserSongLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSongLibrary.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,6 +64,8 @@
 				A10000000000000000000003 /* GlobalKeyTap.swift */,
 				A10000000000000000000004 /* PianoAudioEngine.swift */,
 				A10000000000000000000005 /* Song.swift */,
+				A10000000000000000000008 /* FreePlay.swift */,
+				A10000000000000000000009 /* UserSongLibrary.swift */,
 				A10000000000000000000006 /* Info.plist */,
 				A10000000000000000000007 /* MenuBarPiano.entitlements */,
 			);
@@ -139,6 +145,8 @@
 				B10000000000000000000003 /* GlobalKeyTap.swift in Sources */,
 				B10000000000000000000004 /* PianoAudioEngine.swift in Sources */,
 				B10000000000000000000005 /* Song.swift in Sources */,
+				B10000000000000000000008 /* FreePlay.swift in Sources */,
+				B10000000000000000000009 /* UserSongLibrary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

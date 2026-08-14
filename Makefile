@@ -22,7 +22,9 @@ build:
 
 install: build
 	mkdir -p "$(INSTALL_DIR)"
-	ditto "$(APP_ABS)" "$(INSTALLED_APP)"
+	mkdir -p "$(INSTALLED_APP)"
+	/usr/bin/rsync -aE --delete "$(APP_ABS)/" "$(INSTALLED_APP)/"
+	codesign --verify --deep --strict "$(INSTALLED_APP)"
 	@echo "Installed MenuBarPiano to $(INSTALLED_APP)"
 
 run: install

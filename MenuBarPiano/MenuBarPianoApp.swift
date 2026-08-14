@@ -101,6 +101,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         controller.refreshPermissions()
+        controller.reloadUserSongs()
         rebuildMenu()
     }
 
@@ -114,9 +115,29 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         let playbackTitle = controller.isEnabled ? "⏸ Stop" : "▶ Start"
         let playback = NSMenuItem(title: playbackTitle, action: #selector(togglePlayback), keyEquivalent: "")
         playback.target = self
+        playback.isEnabled = controller.canListenForKeystrokes
         menu.addItem(playback)
 
+        if !controller.canListenForKeystrokes {
+            let permission = NSMenuItem(
+                title: "Needs Input Monitoring — Open System Settings…",
+                action: #selector(openInputMonitoringSettings),
+                keyEquivalent: ""
+            )
+            permission.target = self
+            menu.addItem(permission)
+        } else if let error = controller.lastError {
+            let errorItem = NSMenuItem(title: error, action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
+        }
+
         menu.addItem(.separator())
+
+        let freePlay = NSMenuItem(title: "Free Play", action: #selector(selectFreePlay), keyEquivalent: "")
+        freePlay.target = self
+        freePlay.state = controller.selectedMode == .freePlay ? .on : .off
+        menu.addItem(freePlay)
 
         for group in groupedSongsByCategory() {
             let categoryItem = NSMenuItem(title: group.category, action: nil, keyEquivalent: "")
@@ -126,7 +147,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
                 let item = NSMenuItem(title: song.name, action: #selector(selectSong(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = song.id
-                item.state = song == controller.selectedSong ? .on : .off
+                item.state = controller.selectedMode == .song(song) ? .on : .off
                 submenu.addItem(item)
             }
 
@@ -134,9 +155,13 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
             menu.setSubmenu(submenu, for: categoryItem)
         }
 
+        let addSongs = NSMenuItem(title: "Add Songs…", action: #selector(addSongs), keyEquivalent: "")
+        addSongs.target = self
+        menu.addItem(addSongs)
+
         menu.addItem(.separator())
 
-        if controller.selectedSong.script != nil {
+        if controller.selectedScript != nil {
             let copyScript = NSMenuItem(title: "Copy typing script", action: #selector(copyTypingScript), keyEquivalent: "")
             copyScript.target = self
             menu.addItem(copyScript)
@@ -146,6 +171,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         let loop = NSMenuItem(title: "Loop", action: #selector(toggleLoop), keyEquivalent: "")
         loop.target = self
         loop.state = controller.loopEnabled ? .on : .off
+        loop.isEnabled = controller.selectedMode != .freePlay
         menu.addItem(loop)
 
         let resetAfterPause = NSMenuItem(title: "Reset after pause", action: #selector(toggleResetAfterPause), keyEquivalent: "")
@@ -164,7 +190,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         var groups: [(category: String, songs: [Song])] = []
         var categoryIndexes: [String: Int] = [:]
 
-        for song in controller.songs {
+        for song in controller.allSongs {
             if let index = categoryIndexes[song.category] {
                 groups[index].songs.append(song)
             } else {
@@ -179,7 +205,7 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func selectSong(_ sender: NSMenuItem) {
         guard
             let songID = sender.representedObject as? String,
-            let song = controller.songs.first(where: { $0.id == songID })
+            let song = controller.allSongs.first(where: { $0.id == songID })
         else {
             return
         }
@@ -188,8 +214,27 @@ private final class StatusItemController: NSObject, NSMenuDelegate {
         rebuildMenu()
     }
 
+    @objc private func selectFreePlay() {
+        controller.selectFreePlay()
+        rebuildMenu()
+    }
+
+    @objc private func addSongs() {
+        do {
+            try UserSongLibrary.createDirectory()
+            NSWorkspace.shared.open(UserSongLibrary.songsDirectory)
+        } catch {
+            FileHandle.standardError.write(Data("MenuBarPiano could not create the Songs folder: \(error)\n".utf8))
+        }
+    }
+
+    @objc private func openInputMonitoringSettings() {
+        controller.requestInputMonitoringPermission()
+        rebuildMenu()
+    }
+
     @objc private func copyTypingScript() {
-        guard let script = controller.selectedSong.script else {
+        guard let script = controller.selectedScript else {
             return
         }
 

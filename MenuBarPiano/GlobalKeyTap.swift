@@ -1,4 +1,3 @@
-import ApplicationServices
 import CoreGraphics
 import Foundation
 
@@ -26,10 +25,6 @@ final class GlobalKeyTap {
     }
 
     func start() -> Bool {
-        guard AXIsProcessTrusted() else {
-            return false
-        }
-
         stop()
 
         let eventMask = CGEventMask(1 << CGEventType.keyDown.rawValue)

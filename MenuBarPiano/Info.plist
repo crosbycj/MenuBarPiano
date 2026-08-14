@@ -24,10 +24,6 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSAccessibilityUsageDescription</key>
-	<string>MenuBar Piano uses Accessibility access to observe real system-wide key presses and play notes without changing what you type.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>MenuBar Piano may open the Privacy &amp; Security settings pane to help you grant Accessibility access.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSInputMonitoringUsageDescription</key>

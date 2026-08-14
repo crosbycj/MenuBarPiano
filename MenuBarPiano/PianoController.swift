@@ -1,30 +1,74 @@
 import AppKit
-import ApplicationServices
 import Combine
+import CoreGraphics
 import Foundation
-import IOKit.hidsystem
+
+enum PlaybackMode: Hashable {
+    case freePlay
+    case song(Song)
+
+    static let freePlayID = "free-play"
+
+    var id: String {
+        switch self {
+        case .freePlay:
+            return Self.freePlayID
+        case .song(let song):
+            return song.id
+        }
+    }
+}
 
 final class PianoController: ObservableObject {
     let songs = Song.library
 
     @Published private(set) var isEnabled = false
-    @Published private(set) var hasAccessibilityPermission = AccessibilityPermission.isGranted
     @Published private(set) var hasInputMonitoringPermission = InputMonitoringPermission.isGranted
     @Published private(set) var lastError: String?
     @Published private(set) var loopEnabled = true
     @Published private(set) var resetAfterPauseEnabled = true
-    @Published var selectedSong: Song = Song.library[0] {
-        didSet {
-            currentNoteIndex = 0
-        }
+    @Published private(set) var userSongs: [Song]
+    @Published private(set) var selectedMode: PlaybackMode
+
+    var allSongs: [Song] {
+        songs + userSongs
     }
+
+    var selectedScript: String? {
+        guard case .song(let song) = selectedMode else { return nil }
+        return song.script
+    }
+
+    var canListenForKeystrokes: Bool {
+        hasInputMonitoringPermission
+    }
+
+    private static let selectedModeDefaultsKey = "selectedPlaybackModeID"
+    private static let inputMonitoringError = "Input Monitoring access is required before listening to keystrokes."
 
     private let audioEngine = PianoAudioEngine()
     private let keyTap = GlobalKeyTap()
+    private let defaults: UserDefaults
     private var currentNoteIndex = 0
+    private var freePlayGenerator = FreePlayNoteGenerator()
     private var idleResetTimer: Timer?
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+
+        let loadedUserSongs = UserSongLibrary.loadSongs()
+        userSongs = loadedUserSongs
+
+        let savedID = defaults.string(forKey: Self.selectedModeDefaultsKey)
+        if let savedID, let song = (Song.library + loadedUserSongs).first(where: { $0.id == savedID }) {
+            selectedMode = .song(song)
+        } else {
+            selectedMode = .freePlay
+            if savedID != nil, savedID != PlaybackMode.freePlayID {
+                defaults.set(PlaybackMode.freePlayID, forKey: Self.selectedModeDefaultsKey)
+            }
+        }
+
         keyTap.onKeyDown = { [weak self] in
             DispatchQueue.main.async {
                 self?.handleKeyDown()
@@ -39,7 +83,31 @@ final class PianoController: ObservableObject {
     }
 
     func select(_ song: Song) {
-        selectedSong = song
+        setSelectedMode(.song(song))
+    }
+
+    func selectFreePlay() {
+        setSelectedMode(.freePlay)
+    }
+
+    func reloadUserSongs() {
+        let loadedSongs = UserSongLibrary.loadSongs()
+        userSongs = loadedSongs
+
+        guard case .song(let selectedSong) = selectedMode,
+              selectedSong.category == Song.Category.yourSongs else {
+            return
+        }
+
+        guard let updatedSong = loadedSongs.first(where: { $0.id == selectedSong.id }) else {
+            setSelectedMode(.freePlay)
+            return
+        }
+
+        if updatedSong != selectedSong {
+            selectedMode = .song(updatedSong)
+            resetProgress()
+        }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -49,7 +117,9 @@ final class PianoController: ObservableObject {
     func toggleLoop() {
         loopEnabled.toggle()
 
-        if loopEnabled, currentNoteIndex >= selectedSong.notes.count {
+        if case .song(let song) = selectedMode,
+           loopEnabled,
+           currentNoteIndex >= song.notes.count {
             currentNoteIndex = 0
         }
     }
@@ -62,37 +132,15 @@ final class PianoController: ObservableObject {
         }
     }
 
-    var canListenForKeystrokes: Bool {
-        hasAccessibilityPermission && hasInputMonitoringPermission
-    }
-
-    func playPreviewNote() {
-        guard let note = selectedSong.notes.first else {
-            return
-        }
-
-        audioEngine.play(midiNote: note)
-    }
-
-    func refreshAccessibilityPermission() {
-        refreshPermissions()
-    }
-
     func refreshPermissions() {
-        hasAccessibilityPermission = AccessibilityPermission.isGranted
         hasInputMonitoringPermission = InputMonitoringPermission.isGranted
+
+        if hasInputMonitoringPermission, lastError == Self.inputMonitoringError {
+            lastError = nil
+        }
 
         if !canListenForKeystrokes, isEnabled {
             disable()
-        }
-    }
-
-    func requestAccessibilityPermission() {
-        hasAccessibilityPermission = AccessibilityPermission.request()
-        AccessibilityPermission.openSettings()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.refreshAccessibilityPermission()
         }
     }
 
@@ -105,19 +153,20 @@ final class PianoController: ObservableObject {
         }
     }
 
+    private func setSelectedMode(_ mode: PlaybackMode) {
+        guard selectedMode != mode else { return }
+
+        selectedMode = mode
+        defaults.set(mode.id, forKey: Self.selectedModeDefaultsKey)
+        cancelIdleResetTimer()
+        resetProgress()
+    }
+
     private func enable() {
         refreshPermissions()
 
-        guard hasAccessibilityPermission else {
-            lastError = "Accessibility access is required before listening to keystrokes."
-            isEnabled = false
-            keyTap.stop()
-            audioEngine.stop()
-            return
-        }
-
         guard hasInputMonitoringPermission else {
-            lastError = "Input Monitoring access is required before listening to keystrokes."
+            lastError = Self.inputMonitoringError
             isEnabled = false
             keyTap.stop()
             audioEngine.stop()
@@ -151,53 +200,51 @@ final class PianoController: ObservableObject {
     }
 
     private func handleKeyDown() {
-        guard isEnabled else {
-            return
-        }
+        guard isEnabled else { return }
 
         playNextNote()
         restartIdleResetTimer()
     }
 
     private func playNextNote() {
-        let notes = selectedSong.notes
+        switch selectedMode {
+        case .freePlay:
+            audioEngine.play(midiNote: freePlayGenerator.nextNote())
 
-        guard !notes.isEmpty else {
-            return
-        }
+        case .song(let song):
+            guard !song.notes.isEmpty else { return }
 
-        if currentNoteIndex >= notes.count {
-            guard loopEnabled else {
-                return
+            if currentNoteIndex >= song.notes.count {
+                guard loopEnabled else { return }
+                currentNoteIndex = 0
             }
 
-            currentNoteIndex = 0
+            audioEngine.play(midiNote: song.notes[currentNoteIndex])
+            currentNoteIndex += 1
+
+            if loopEnabled, currentNoteIndex >= song.notes.count {
+                currentNoteIndex = 0
+            }
         }
-
-        let note = notes[currentNoteIndex]
-        currentNoteIndex += 1
-
-        if loopEnabled, currentNoteIndex >= notes.count {
-            currentNoteIndex = 0
-        }
-
-        audioEngine.play(midiNote: note)
     }
 
     private func restartIdleResetTimer() {
         cancelIdleResetTimer()
 
-        guard resetAfterPauseEnabled else {
-            return
-        }
+        guard resetAfterPauseEnabled else { return }
 
         let timer = Timer(timeInterval: 2.5, repeats: false) { [weak self] _ in
-            self?.currentNoteIndex = 0
+            self?.resetProgress()
             self?.idleResetTimer = nil
         }
 
         idleResetTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func resetProgress() {
+        currentNoteIndex = 0
+        freePlayGenerator.reset()
     }
 
     private func cancelIdleResetTimer() {
@@ -206,39 +253,14 @@ final class PianoController: ObservableObject {
     }
 }
 
-enum AccessibilityPermission {
-    static var isGranted: Bool {
-        AXIsProcessTrusted()
-    }
-
-    @discardableResult
-    static func request() -> Bool {
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-        ] as CFDictionary
-
-        return AXIsProcessTrustedWithOptions(options)
-    }
-
-    static func openSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ) else {
-            return
-        }
-
-        NSWorkspace.shared.open(url)
-    }
-}
-
 enum InputMonitoringPermission {
     static var isGranted: Bool {
-        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        CGPreflightListenEventAccess()
     }
 
     @discardableResult
     static func request() -> Bool {
-        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        CGRequestListenEventAccess()
     }
 
     static func openSettings() {
