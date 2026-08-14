@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
         installToggleHotKey()
+
+        // Request after launch so macOS can present its native Input Monitoring prompt.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.controller.requestInputMonitoringPermission(openSettingsWhenNeeded: false)
+            self?.statusItemController?.refreshMenu()
+        }
     }
 
     private func installStatusItem() {

@@ -144,9 +144,15 @@ final class PianoController: ObservableObject {
         }
     }
 
-    func requestInputMonitoringPermission() {
+    func requestInputMonitoringPermission(openSettingsWhenNeeded: Bool = true) {
         hasInputMonitoringPermission = InputMonitoringPermission.request()
-        InputMonitoringPermission.openSettings()
+
+        if !hasInputMonitoringPermission, openSettingsWhenNeeded {
+            // Give TCC time to register the app before showing its settings row.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                InputMonitoringPermission.openSettings()
+            }
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             self?.refreshPermissions()
